@@ -1,0 +1,23 @@
+name: check_sar_perf
+description: "file:///README.md"
+url: "https://github.com/bytewriter/check-common-ups.git"
+tags: Icinga
+vendor: APC, CyberPower
+target: Hardware
+type: Plugin
+license: gplv3
+releases: 
+  - 
+    name: 2017-04-18
+    description: "Release 2017-04-18"
+    files: 
+      - 
+        name: check_common_ups
+        url: "file:///check_common_ups"
+        description: "Release 2017-04-18"
+        checksum: 7f38acbde142a6007c0cc007110b717f
+      -
+        name: common_ups.conf
+        url: "file:///common_ups.conf"
+        description: "Release 2017-04-11"
+        checksum: 3411c9ed3622fa2e8ec2fdf9811583e3
