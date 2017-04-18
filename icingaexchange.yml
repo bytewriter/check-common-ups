@@ -1,4 +1,4 @@
-name: check_sar_perf
+name: check_common_ups
 description: "file:///README.md"
 url: "https://github.com/bytewriter/check-common-ups.git"
 tags: Icinga
