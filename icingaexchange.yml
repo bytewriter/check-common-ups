@@ -16,7 +16,7 @@ releases:
         url: "file:///check_common_ups"
         description: "Release 2017-04-18"
         checksum: 7f38acbde142a6007c0cc007110b717f
-      -
+
         name: common_ups.conf
         url: "file:///common_ups.conf"
         description: "Release 2017-04-11"
