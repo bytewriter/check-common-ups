@@ -22,12 +22,12 @@ The 2 files should be place here:<br/>
 /usr/lib64/nagios/plugins/check_common_ups
 
 With graphite, the default settings will result in 6 graphs per UPS, all on one page:<br/>
-  Temp - battery temperature<br/>
-  Line_Voltage - Input voltage to the UPS<br/>
-  Load - power load reported<br/>
-  RunTime - battery runtime in minutes<br/>
-  Diagnostic - days since last diagnostic<br/>
-  Calibration - days since last calibration<br/>
+* Temp - battery temperature<br/>
+* Line_Voltage - Input voltage to the UPS<br/>
+* Load - power load reported<br/>
+* RunTime - battery runtime in minutes<br/>
+* Diagnostic - days since last diagnostic<br/>
+* Calibration - days since last calibration<br/>
 The last 2, Diagnostic and Calibration days, can be disabled.
 
 If you have a cyberpower 202 or 303 card or another card that does not
