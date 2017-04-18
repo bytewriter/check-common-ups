@@ -17,8 +17,8 @@ BY YOU OR THIRD PARTIES OR A FAILURE OF THE PROGRAM TO OPERATE WITH ANY OTHER
 PROGRAMS), EVEN IF THE AUTHOR HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH 
 DAMAGES.
 
-The 2 files needed are:
-/usr/share/icinga2/include/plugins-contrib.d/common_ups.conf
+The 2 files should be place here:<br/>
+/usr/share/icinga2/include/plugins-contrib.d/common_ups.conf<br/>
 /usr/lib64/nagios/plugins/check_common_ups
 
 With graphite, the default settings will result in 6 graphs per UPS, all on one page:
