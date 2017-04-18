@@ -16,10 +16,11 @@
 #                    this OID is really just a calculation of last battery 
 #                    replace date + 3 years, and battery replace date can
 #                    be manually reset through the web interface.
-# Mel - 2017-04-13 - change upstype to autodetect. Note: can not detect model
-#                    because CyberPower always gives model "1.1.1", regardless
-#                    of what it is, and sysDescr always returns "UPS SNMP Card"
-#                    across all cards.
+# Mel - 2017-04-13 - change upstype to autodetect.
+# Mel - 2017-04-18 - removed model detect attempt using sysObjectID
+#                    Note: For sysDescr CyberPower always returns "UPS SNMP Card"
+#                    across all cards tested. APC returns full details, example:
+#                    APC Web/SNMP Management Card (MB:v4.0.1 PF:v6.1.1 PN:apc_hw05_aos_611.bin AF1:v6.1.1 AN1:apc_hw05_sumx_611.bin MN:AP9630 HR:05 SN: ZA1425004783 MD:06/18/2014) (Embedded PowerNet SNMP Agent SW v2.2 compatible)
 # !!!!!!!!!!!!!!!!!!!!!!!!!!! REQUIRES BASH 4 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 # THE PROGRAM IS DISTRIBUTED IN THE HOPE THAT IT WILL BE USEFUL, BUT WITHOUT 
 # ANY WARRANTY. IT IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EITHER
@@ -35,7 +36,7 @@
 # PROGRAMS), EVEN IF THE AUTHOR HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH 
 # DAMAGES.
 
-version="2017-04-13"
+version="2017-04-18"
 
 if [[ "${BASH_VERSINFO[0]}" -lt 4 ]];then
     echo "Requires bash version >= 4"
@@ -137,6 +138,7 @@ snmpPoll(){
     snmpresult="$($SNMPget -c $community $MALL $upsip $1 2>/dev/null)"
     if [[ $? -ne 0 ]];then
         echo "CRITICAL: $upsip $upsmodel not responding to $2 SNMP poll. snmpresult=$snmpresult"
+
         exit 2
     fi
 }
@@ -229,7 +231,6 @@ sysObjectID="1.3.6.1.2.1.1.2.0"
 snmpPoll "$sysObjectID" sysObjectID
 upsvendorID="${snmpresult##*:}"
 upsvendorID="${upsvendorID#*.}"
-upsmodelID="${upsvendorID#*.}"
 upsvendorID="${upsvendorID%%.*}"
 case ${upsvendorID} in
     318)     upstype="apc";upsvendorPrettyName="APC";;
