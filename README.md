@@ -1,7 +1,8 @@
 # check-common-ups
 this file: README.md<br/>
 snmp checks for common UPS with perfdata (currently APC or CyberPower)<br/>
-auto detect UPS brand, and run snmp checks for icinga2. Should also work for nagios and icinga1
+auto detect UPS brand, and run snmp checks for icinga2. Should also work for nagios and icinga1<br/>
+shows brand and model on icinga web page
 
 THE PROGRAM IS DISTRIBUTED IN THE HOPE THAT IT WILL BE USEFUL, BUT WITHOUT
 ANY WARRANTY. IT IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EITHER
