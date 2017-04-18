@@ -1,6 +1,6 @@
 # check-common-ups
-this file: README.md
-snmp checks for common UPS with perfdata (currently APC or CyberPower)
+this file: README.md<br/>
+snmp checks for common UPS with perfdata (currently APC or CyberPower)<br/>
 auto detect UPS brand, and run snmp checks for icinga2. Should also work for nagios and icinga1
 
 THE PROGRAM IS DISTRIBUTED IN THE HOPE THAT IT WILL BE USEFUL, BUT WITHOUT
@@ -21,23 +21,23 @@ The 2 files should be place here:<br/>
 /usr/share/icinga2/include/plugins-contrib.d/common_ups.conf<br/>
 /usr/lib64/nagios/plugins/check_common_ups
 
-With graphite, the default settings will result in 6 graphs per UPS, all on one page:
-  Temp - battery temperature
-  Line_Voltage - Input voltage to the UPS
-  Load - power load reported 
-  RunTime - battery runtime in minutes
-  Diagnostic - days since last diagnostic
-  Calibration - days since last calibration
+With graphite, the default settings will result in 6 graphs per UPS, all on one page:<br/>
+  Temp - battery temperature<br/>
+  Line_Voltage - Input voltage to the UPS<br/>
+  Load - power load reported<br/>
+  RunTime - battery runtime in minutes<br/>
+  Diagnostic - days since last diagnostic<br/>
+  Calibration - days since last calibration<br/>
 The last 2, Diagnostic and Calibration days, can be disabled.
 
 If you have a cyberpower 202 or 303 card or another card that does not
 support battery status checks, you need to disable the battery
-replace status check with ups_noreplaceck.
+replace status check with ups_noreplaceck. These cards do not offer this OID.
 
 You can also disble Diagnostic and Calibration tests, but I have found
 this causes some issues to be missed, like "wiring fault".
 
-A sample config /etc/icinga2/conf.d/my-ups.conf:
+# A sample config /etc/icinga2/conf.d/my-ups.conf:
 ```
 object Host "my-ups" {
 import "generic-host"
