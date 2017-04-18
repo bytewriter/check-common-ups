@@ -1,0 +1,456 @@
+#!/bin/bash
+# this file: /usr/lib64/nagios/plugins/check_common_ups
+# Mel - 2016-09-15 - icinga2 check apc ups
+# Mel - 2016-09-19 - add cyber power ups checks - Note: CyberPower has some
+#                    "Wrong Type" errors in their MIB file. These are made
+#                    functional by using OID numerics and not OID strings,
+#                    and also not referencing their their MIB file. So I have
+#                    removed the OID strings for APC and removed the -mALL
+#                    variable for consistency.
+# Mel - 2016-09-20 - fix cyberpower reports voltage in tenths of volts
+# Mel - 2016-09-29 - add bash version check, change sysName to numeric MIB
+#                    for consistency
+# Mel - 2017-04-11 - added option to skip battery replace flag check, since
+#                    cyber power 202 and 303 cards (and maybe others) do not 
+#                    have this OID. Recommend 205/305 cards instead. However,
+#                    this OID is really just a calculation of last battery 
+#                    replace date + 3 years, and battery replace date can
+#                    be manually reset through the web interface.
+# Mel - 2017-04-13 - change upstype to autodetect. Note: can not detect model
+#                    because CyberPower always gives model "1.1.1", regardless
+#                    of what it is, and sysDescr always returns "UPS SNMP Card"
+#                    across all cards.
+# !!!!!!!!!!!!!!!!!!!!!!!!!!! REQUIRES BASH 4 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+# THE PROGRAM IS DISTRIBUTED IN THE HOPE THAT IT WILL BE USEFUL, BUT WITHOUT 
+# ANY WARRANTY. IT IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EITHER
+# EXPRESSED OR IMPLIED, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES 
+# OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE. THE ENTIRE RISK AS 
+# TO THE QUALITY AND PERFORMANCE OF THE PROGRAM IS WITH YOU. SHOULD THE 
+# PROGRAM PROVE DEFECTIVE, YOU ASSUME THE COST OF ALL NECESSARY SERVICING, 
+# REPAIR OR CORRECTION. IN NO EVENT WILL THE AUTHOR BE LIABLE TO YOU FOR 
+# DAMAGES, INCLUDING ANY GENERAL, SPECIAL, INCIDENTAL OR CONSEQUENTIAL DAMAGES 
+# ARISING OUT OF THE USE OR INABILITY TO USE THE PROGRAM (INCLUDING BUT NOT 
+# LIMITED TO LOSS OF DATA OR DATA BEING RENDERED INACCURATE OR LOSSES SUSTAINED 
+# BY YOU OR THIRD PARTIES OR A FAILURE OF THE PROGRAM TO OPERATE WITH ANY OTHER 
+# PROGRAMS), EVEN IF THE AUTHOR HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH 
+# DAMAGES.
+
+version="2017-04-13"
+
+if [[ "${BASH_VERSINFO[0]}" -lt 4 ]];then
+    echo "Requires bash version >= 4"
+    exit 1
+fi
+
+requiredsoftware="snmpget:net-snmp-utils bc:bc"
+for x in $requiredsoftware;do
+    if [[ "$(which ${x%%:*} 2>/dev/null)" == "" ]];then
+        stillneeded="$stillneeded ${x##*:}"
+        echo "Missing software: ${x%%:*}"
+    fi
+done
+if [[ ! -z $stillneeded ]];then
+    echo "Install missing software with:"
+    echo "yum -y install $stillneeded"
+    exit 1
+fi
+
+usage(){
+    cat << MEL
+Usage:
+  $(basename $0) [OPTION]... [OPTION]...
+
+Options:
+  -b, --onbattcrit Set CRITICAL any time ups is on battery. Without this
+     "on battery" is only warning. In that case final status would only
+     be warning until run time falls below critical level (set by -R)
+  -B, --noreplaceck, Do not check battery replace status. The battery
+     replace status is just a calculation the battery replaced date plus
+     3 years. The battery replace date can be set in the web interface.
+     The cyber 202 and 303 cards (and maybe others) do not have this OID. 
+  -C STRING, --community STRING, The SNMP community string. Defaults to
+     "public".
+  -d CHAR, --degrees CHAR, Accepted values are C, c, F, or f. For celsius or 
+     fahrenheit. Invalid values or not set will default to fahrenheit. This
+     setting is also used by -t and -T to determine default values.
+  -h, --help  Show this help message.
+  -H HOSTNAME, --host HOST, Set HOSTNAME or IP to check.
+  -i INTEGER, --inlow INTEGER, Set WARNING status if input voltage is less
+     than INTEGER. Values are not checked for sanity, except inlow must be
+     less than inhigh. Defaults to 106.
+  -I INTEGER, --inhigh INTEGER, Set WARNING status if input voltage is
+     greater than INTEGER. Values are not checked for sanity, except inlow
+     must be less than inhigh. Defaults to 133. (Note: inlow and inhigh
+     can result in CRITICAL status if -v flag is set)
+  -l INTEGER, --warnload INTEGER, Set WARNING status if ups load is greater
+     than INTEGER. loadwarn values should be less than loadcrit values.
+     Defaults to 70.
+  -L INTEGER, --critload INTEGER, Set CRITICAL status if ups load is greater
+     than INTEGER. loadcrit values less than loadwarn values will be set to
+     loadwarn +1. Defaults to 80.
+  -r INTEGER, --warnrun INTEGER, Set WARNING status if runtime is less than
+     INTEGER minutes. If not set, defaults to 10. Minimum value is 2.
+  -R INTEGER, --critrun INTEGER, Set CRITICAL status if runtime is less than
+     INTEGER minutes. If not set, defaults to 8. critrun values greater than
+     warnrun values will be set to warnrun -1. Minimum value is 1.
+  -t INTEGER, --warntemp INTEGER, Set WARNING status if battery temperature
+     is more than INTEGER degrees. Celsius or fahrenheit is set by -d.
+     If not set, defaults to 45 celsius, or 113 fahrenheit (see -d)
+  -T INTEGER, --crittemp INTEGER, Set CRITICAL status if battery temperature
+     is more than INTEGER degrees Celsius or fahrenheit is set by -d. 
+     Crit values not greater than warn values will be set to warn value +1.
+     If not set, defaults to 50 celsius, or 122 fahrenheit. (see -d)
+  -v, --voltcrit Set CRITICAL for input voltage low or high results. (-i
+     and -I)
+  -V --version Show version information.
+  -w INTEGER, --diagwarn INTEGER, Set WARNING status if number of days since
+     last diagnostic is more than INTEGER days. Default is 15. This test may
+     be disabled with -x.
+  -W INTEGER, --diagcrit INTEGER, Set CRITICAL status if number of days since
+     last diagnostic is more than INTEGER days. Default is 20. This test may
+     be disabled with -x.
+  -x, --nodiagck Disables test for number of days since last diagnostic.
+     Implies -z.
+  -X, --nocalibck Disables test for number of days since last calibration.
+  -y INTEGER, --calibwarn INTEGER, Set WARNING status if number of days since
+     last calibration is more than INTEGER days. This test may be disabled
+     with -X. Default is 365.
+  -Y INTEGER, --calibcrit INTEGER, Set CRITICAL status if number of days since
+     last calibration is more than INTEGER days. This test may be disabled
+     with -X. Default is 400.
+  -z, --nodiagdata Disables diagnostic days performance data.
+  -Z, --nocalibdata Disables calibration days performance data.
+Example:
+  $(basename $0) -H 10.1.2.3 -C public -b -d c -i 105 -I 133 -l 20 -L 40 -r 15 -R 10 -t 44 -T 51 -w 14 -W 21 -X 
+MEL
+}
+
+# FIXME replace below with some test for snmp version, and ummm... add support for other versions (user, password, etc)
+SNMPget="snmpget -v1"
+
+showver(){
+    echo "$(basename $0) version $version"
+}
+
+# sets variable snmpresult
+snmpPoll(){
+    snmpresult="$($SNMPget -c $community $MALL $upsip $1 2>/dev/null)"
+    if [[ $? -ne 0 ]];then
+        echo "CRITICAL: $upsip $upsmodel not responding to $2 SNMP poll. snmpresult=$snmpresult"
+        exit 2
+    fi
+}
+
+# set some defaults here that may get changed by arguments below
+community="public"
+voltcrit="WARN"
+onbatt="WARN"
+# run time
+runwarn=10
+runcrit=8
+# Input Voltage
+inlow=106
+inhigh=133
+# Output Load
+loadcrit=80
+loadwarn=70
+# diagnostic days
+diagwarn=15
+diagcrit=20
+# calibration days
+calibwarn=365
+calibcrit=400
+while getopts "bBC:d:hH:i:I:l:L:r:R:t:T-:u:vVw:W:xXy:Y:zZ" opt; do
+    case $opt in
+        b)  onbatt="CRIT" ;;
+        B)  ckreplc="no" ;;
+        C)  community="$OPTARG" ;;
+        d)  degrees="${OPTARG:0:1}" ;;
+        h)  usage;exit ;;
+        H)  upsip="$OPTARG" ;;
+        i)  inlow=$OPTARG ;;
+        I)  inhigh=$OPTARG ;;
+        l)  loadwarn=$OPTARG ;;
+        L)  loadcrit=$OPTARG ;;
+        r)  runwarn=$OPTARG ;;
+        R)  runcrit=$OPTARG ;;
+        t)  tempwarn=$OPTARG ;;
+        T)  tempcrit=$OPTARG ;;
+        u)  upstype=$OPTARG ;;
+        v)  voltcrit="CRIT" ;;
+        V)  showver;exit ;;
+        w)  diagwarn=$OPTARG ;;
+        W)  diagcrit=$OPTARG ;;
+        x)  diagtest="no";diagdata="no" ;;
+        X)  calibtest="no";calibdata="no" ;;
+        y)  calibwarn=$OPTARG ;;
+        Y)  calibcrit=$OPTARG ;;
+        z)  diagdata="no" ;;
+        Z)  calibdata="no" ;;
+        -)
+            # long args for official compatibility...
+            case $OPTARG in
+                help)       usage;exit ;;
+                version)    showver;exit ;;
+                community)  community="${!OPTIND}";shift $OPTIND;OPTIND=1;;
+                degrees)    degrees="${OPTARG:0:1}" ;;
+                crittemp)   tempcrit=${!OPTIND};shift $OPTIND;OPTIND=1;;
+                warntemp)   tempwarn=${!OPTIND};shift $OPTIND;OPTIND=1;;
+                critrun)    runcrit=${!OPTIND};shift $OPTIND;OPTIND=1;;
+                warnrun)    runwarn=${!OPTIND};shift $OPTIND;OPTIND=1;;
+                critload)   loadcrit=${!OPTIND};shift $OPTIND;OPTIND=1;;
+                warnload)   loadwarn=${!OPTIND};shift $OPTIND;OPTIND=1;;
+                inhigh)     inhigh=${!OPTIND};shift $OPTIND;OPTIND=1;;
+                inlow)      inlow=${!OPTIND};shift $OPTIND;OPTIND=1;;
+                host)       upsip="${!OPTIND}";shift $OPTIND;OPTIND=1;;
+                onbattcrit) onbatt="CRIT" ;;
+                noreplaceck)ckreplc="no";shift $OPTIND;OPTIND=1;;
+                upstype)    upstype="${!OPTIND}";shift $OPTIND;OPTIND=1;;
+                voltcrit)   voltcrit="CRIT" ;;
+                diagwarn)   diagwarn=${!OPTIND};shift $OPTIND;OPTIND=1;;
+                diagcrit)   diagcrit=${!OPTIND};shift $OPTIND;OPTIND=1;;
+                nodiagck)   diagtest="no";diagdata="no" ;;
+                nocalibck)  calibtest="no";calibdata="no" ;;
+                calibwarn)  calibwarn=${!OPTIND};shift $OPTIND;OPTIND=1;;
+                calibcrit)  calibcrit=${!OPTIND};shift $OPTIND;OPTIND=1;;
+                nodiagdata) diagdata="no" ;;
+                nocalibdata) calibdata="no" ;;
+                *)
+                    echo "Invalid long argument: --$OPTARG";usage;exit 1;;
+            esac ;;
+        \?) echo "Invalid short argument: -$OPTARG";usage;exit 1 ;;
+    esac
+done
+
+sysName="1.3.6.1.2.1.1.5.0"
+sysObjectID="1.3.6.1.2.1.1.2.0"
+
+# check which brand of ups
+snmpPoll "$sysObjectID" sysObjectID
+upsvendorID="${snmpresult##*:}"
+upsvendorID="${upsvendorID#*.}"
+upsmodelID="${upsvendorID#*.}"
+upsvendorID="${upsvendorID%%.*}"
+case ${upsvendorID} in
+    318)     upstype="apc";upsvendorPrettyName="APC";;
+    3808)    upstype="cyber";upsvendorPrettyName="CyberPower";;
+    *)       upstype="unsupported";upsvendorPrettyName="Unsuppoted";;
+esac
+
+case ${upstype} in
+    cyber)
+        MIBmodel="1.3.6.1.4.1.3808.1.1.1.1.1.1.0"
+        MIBbatTemp="1.3.6.1.4.1.3808.1.1.1.2.2.3.0"
+        MIBinVolts="1.3.6.1.4.1.3808.1.1.1.3.2.1.0"
+        MIBoutLoad="1.3.6.1.4.1.3808.1.1.1.4.2.3.0"
+        MIBrunTime="1.3.6.1.4.1.3808.1.1.1.2.2.4.0"
+        MIBbatReplc="1.3.6.1.4.1.3808.1.1.1.2.2.5.0"
+        MIBtimeOnBat="1.3.6.1.4.1.3808.1.1.1.2.1.2.0"
+        MIBcalibResult="1.3.6.1.4.1.3808.1.1.1.7.2.7.0"
+        MIBdiagResult="1.3.6.1.4.1.3808.1.1.1.7.2.3.0"
+        MIBlastDiag="1.3.6.1.4.1.3808.1.1.1.7.2.4.0"
+        MIBcalibDate="1.3.6.1.4.1.3808.1.1.1.7.2.8.0"
+        ;;
+    apc)
+        MIBmodel="1.3.6.1.4.1.318.1.1.1.1.1.1.0"
+        MIBbatTemp="1.3.6.1.4.1.318.1.1.1.2.2.2.0"
+        MIBinVolts="1.3.6.1.4.1.318.1.1.1.3.2.1.0"
+        MIBoutLoad="1.3.6.1.4.1.318.1.1.1.4.2.3.0"
+        MIBrunTime="1.3.6.1.4.1.318.1.1.1.2.2.3.0"
+        MIBbatReplc="1.3.6.1.4.1.318.1.1.1.2.2.4.0"
+        MIBtimeOnBat="1.3.6.1.4.1.318.1.1.1.2.1.2.0"
+        MIBcalibResult="1.3.6.1.4.1.318.1.1.1.7.2.6.0"
+        MIBdiagResult="1.3.6.1.4.1.318.1.1.1.7.2.3.0"
+        MIBlastDiag="1.3.6.1.4.1.318.1.1.1.7.2.4.0"
+        MIBcalibDate="1.3.6.1.4.1.318.1.1.1.7.2.7.0"
+        ;;
+    *)
+        echo "Unsupported upstype: $upstype";exit 1;;
+esac
+if [[ -z $upsip ]];then
+    echo "CRITICAL: Hostname or IP not given"
+    exit 2
+fi
+# set any unset values
+degrees="${degrees,,}"
+[[ $degrees != "f" ]] && [[ $degrees != "c" ]] && degrees="f"
+if [[ $degrees == "f" ]];then
+    [[ -z $tempwarn ]] && tempwarn=113
+    [[ -z $tempcrit ]] && tempcrit=122
+else
+    [[ -z $tempwarn ]] && tempwarn=45
+    [[ -z $tempcrit ]] && tempcrit=50
+fi
+[[ $tempwarn -gt $tempcrit ]] && tempcrit=$((10#${tempwarn}+1))
+# run time
+[[ $runwarn -lt 2 ]] && runwarn=2
+[[ $runcrit -lt 1 ]] && runcrit=1
+[[ $runcrit -lt $runwarn ]] || runcrit=$((10#${runwarn}-1))
+exitstatus=0
+
+snmpPoll "$sysName" sysName
+upshostname="${snmpresult##* }"
+upshostname="${upshostname//\"/}"
+
+# to show UPS model in output
+snmpPoll "$MIBmodel" upsModel
+upsmodel="${snmpresult#*\"}"
+upsmodel="${upsmodel//\"/}"
+
+snmpPoll "$MIBtimeOnBat" OnBattery
+onbattime="${snmpresult##* }"
+if [[ $onbattime != "0:00:00.00" ]];then
+    [[ $onbatt == "CRIT" ]] && exitstatus=2 || exitstatus=1
+    exitstring="$onbatt: on battery"
+fi
+
+snmpPoll "$MIBdiagResult" DiagnosticResult
+diagnostic="${snmpresult##* }"
+if [[ $diagnostic != "ok(1)" ]] && [[ $diagnostic != "1" ]];then
+    exitstatus=2
+    [[ -z $exitstring ]] && exitstring="CRIT: diagnostics error" || exitstring="$exitstring, CRIT: diagnostics error"
+fi
+
+if [[ $diagtest != "no" ]];then
+    snmpPoll "$MIBlastDiag" DiagnosticDate
+    diagdate="${snmpresult#*\"}"
+    diagdate="${diagdate//\"/}"
+    if [[ $diagdate =~ [0-9]{2}/[0-9]{2}/[0-9]{4} ]];then
+        lastdiagsecs="$(date -d "$diagdate" +%s)"
+        nowsecs="$(date +%s)"
+        diagdays=$(((nowsecs-lastdiagsecs)/86400))
+        if [[ $diagdays -gt $diagwarn ]];then
+            if [[ $diagdays -gt $diagcrit ]];then
+                exitstatus=2
+                [[ -z $exitstring ]] && exitstring="CRIT: diagnostic overdue: $diagdays > $diagcrit days" || exitstring="$exitstring, CRIT: diagnostic overdue: $diagdays > $diagcrit days"
+            else
+                [[ $exitstatus -lt 1 ]] && exitstatus=1
+                [[ -z $exitstring ]] && exitstring="WARN: diagnostic overdue: $diagdays > $diagwarn days" || exitstring="$exitstring, WARN: diagnostic overdue: $diagdays > $diagwarn days"
+            fi
+        fi
+    else
+        exitstatus=2
+        [[ -z $exitstring ]] && exitstring="CRIT: invalid diagnostic date" || exitstring="$exitstring, CRIT: invalid diagnostic date"
+    fi
+fi
+
+snmpPoll "$MIBcalibResult" CalibrationResult
+calibration="${snmpresult##* }"
+if [[ $calibration != "ok(1)" ]] && [[ $calibration != "1" ]];then
+    exitstatus=2
+    [[ -z $exitstring ]] && exitstring="CRIT: calibration error" || exitstring="$exitstring, CRIT: calibration error"
+fi
+
+if [[ $calibtest != "no" ]];then
+    snmpPoll "$MIBcalibDate" CalibrationDate
+    calibdate="${snmpresult#*\"}"
+    calibdate="${calibdate//\"/}"
+    if [[ $calibdate =~ [0-9]{2}/[0-9]{2}/[0-9]{4} ]];then
+        lastcalibsecs="$(date -d "$calibdate" +%s)"
+        nowsecs="$(date +%s)"
+        calibdays=$(((nowsecs-lastcalibsecs)/86400))
+        if [[ $calibdays -gt $calibwarn ]];then
+            if [[ $calibdays -gt $calibcrit ]];then
+                exitstatus=2
+                [[ -z $exitstring ]] && exitstring="CRIT: calibration overdue: $calibdays > $calibcrit days" || exitstring="$exitstring, CRIT: calibration overdue: $calibdays > $calibcrit days"
+            else
+                [[ $exitstatus -lt 1 ]] && exitstatus=1
+                [[ -z $exitstring ]] && exitstring="WARN: calibration overdue: $calibdays > $calibwarn days" || exitstring="$exitstring, WARN: calibration overdue: $calibdays > $calibwarn days"
+            fi
+        fi
+    else
+        exitstatus=2
+        [[ -z $exitstring ]] && exitstring="CRIT: invalid calibration date" || exitstring="$exitstring, CRIT: invalid calibration date"
+    fi
+fi
+
+if [[ $ckreplc != "no" ]];then
+    snmpPoll "$MIBbatReplc" BatteryReplace
+    battstat="${snmpresult##* }"
+    if [[ ! $battstat =~ ^noBatteryNeedsReplacing.* ]] && [[ $battstat != "1" ]];then
+        exitstatus=2
+        [[ -z $exitstring ]] && exitstring="CRIT: battery needs replaced" || exitstring="$exitstring, CRIT: battery needs replaced"
+    fi
+fi
+
+snmpPoll "$MIBrunTime" RunTime
+rtfull="${snmpresult##* }"
+rthrs="${rtfull%%:*}"
+rtmin="${rtfull%:*}"
+rtmin="${rtmin#*:}"
+runtime=$(((10#${rthrs}*60)+10#${rtmin}))
+if [[ $runtime -lt $runwarn ]];then
+    if [[ $runtime -lt $runcrit ]];then
+        exitstatus=2
+        [[ -z $exitstring ]] && exitstring="CRIT: runtime: $runtime < $runcrit" || exitstring="$exitstring, CRIT: runtime: $runtime < $runcrit"
+    else
+        [[ $exitstatus -lt 1 ]] && exitstatus=1
+        [[ -z $exitstring ]] && exitstring="WARN: runtime: $runtime < $runwarn" || exitstring="$exitstring, WARN: runtime: $runtime < $runwarn"
+    fi
+fi
+
+snmpPoll "$MIBoutLoad" Load
+load="${snmpresult##* }"
+if [[ $load -gt $loadwarn ]];then
+    if [[ $load -gt $loadcrit ]];then
+        exitstatus=2
+        [[ -z $exitstring ]] && exitstring="CRIT: load: $load > $loadcrit" || exitstring="$exitstring, CRIT: load: $load > $loadcrit"
+    else
+        [[ $exitstatus -lt 1 ]] && exitstatus=1
+        [[ -z $exitstring ]] && exitstring="WARN: load $load > $loadwarn" || exitstring="$exitstring, WARN: load $load > $loadwarn"
+    fi
+fi
+
+snmpPoll "$MIBinVolts" LineVoltage
+involts="${snmpresult##* }"
+# cyberpower reports tenths of volts
+if [[ ${upstype} == "cyber" ]];then
+    involtsdata="${involts:0:3}.${involts:3}"
+    involts="${involts:0:3}"
+else
+    involtsdata=$involts
+fi
+if [[ $involts -lt $inlow ]];then
+    [[ $exitstatus -lt 1 ]] && exitstatus=1
+    [[ $voltcrit == "CRIT" ]] && exitstatus=2
+    [[ -z $exitstring ]] && exitstring="$voltcrit: line voltage: $involt < $inlow" || exitstring="$exitstring, $voltcrit: line voltage: $involt < $inlow"
+elif [[ $involts -gt $inhigh ]];then
+    [[ $exitstatus -lt 1 ]] && exitstatus=1
+    [[ $voltcrit == "CRIT" ]] && exitstatus=2
+    [[ -z $exitstring ]] && exitstring="$voltcrit: line voltage: $involt > $inhigh" || exitstring="$exitstring, $voltcrit: line voltage: $involt > $inhigh"
+fi
+
+snmpPoll "$MIBbatTemp" BatteryTemperature
+tempc="${snmpresult##* }"
+tempf="$(echo "(9*$tempc/5)+32"|bc)"
+if [[ $degrees == "c" ]];then
+    temp=$tempc
+    temppref="${tempc}c"
+    tempalt="${tempf}f"
+else
+    temp=$tempf
+    temppref="${tempf}f"
+    tempalt="${tempc}c"
+fi
+if [[ $temp -gt $tempwarn ]];then
+    if [[ $temp -gt $tempcrit ]];then
+        exitstatus=2
+        [[ -z $exitstring ]] && exitstring="CRIT: temp $temppref($tempalt) > $tempcrit$degrees" || exitstring="$exitstring, CRIT: temp $temppref($tempalt) > $tempcrit$degrees"
+    else
+        [[ $exitstatus -lt 1 ]] && exitstatus=1
+        [[ -z $exitstring ]] && exitstring="WARN: temp $temppref($tempalt) > $tempwarn$degrees" || exitstring="$exitstring, WARN: temp $temppref($tempalt) > $tempwarn$degrees"
+    fi
+fi
+
+perfdata=";| Temp=$temp;$tempwarn;$tempcrit;0 Line_Voltage=$involtsdata;$inhigh;;$inlow Load=$load;$loadwarn;$loadcrit;0 RunTime=$runtime;$runwarn;$runcrit;0"
+[[ $diagdata == "no" ]] || perfdata="$perfdata Diagnostic=$diagdays;$diagwarn;$diagcrit;0"
+[[ $calibdata == "no" ]] || perfdata="$perfdata Calibration=$calibdays;$calibwarn;$calibcrit;0"
+[[ -z $exitstring ]] && exitstring="OK"
+exitstring="host: $upshostname: $upsvendorPrettyName ${upsmodel:-(Unknown Model)}: $exitstring$perfdata"
+case $exitstatus in
+    0)  echo "OK: $exitstring";;
+    1)  echo "WARNING: $exitstring";;
+    2)  echo "CRITICAL: $exitstring";;
+    *)  echo "UNKNOWN: $exitstring";;
+esac
+exit $exitstatus
