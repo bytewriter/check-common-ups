@@ -3,7 +3,7 @@ description: "file:///README.md"
 url: "https://github.com/bytewriter/check-common-ups.git"
 tags: Icinga
 vendor: APC, CyberPower
-target: Hardware
+target: UPS
 type: Plugin
 license: gplv3
 releases: 
