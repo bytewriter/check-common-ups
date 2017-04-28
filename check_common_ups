@@ -21,6 +21,8 @@
 #                    Note: For sysDescr CyberPower always returns "UPS SNMP Card"
 #                    across all cards tested. APC returns full details, example:
 #                    APC Web/SNMP Management Card (MB:v4.0.1 PF:v6.1.1 PN:apc_hw05_aos_611.bin AF1:v6.1.1 AN1:apc_hw05_sumx_611.bin MN:AP9630 HR:05 SN: ZA1425004783 MD:06/18/2014) (Embedded PowerNet SNMP Agent SW v2.2 compatible)
+# Mel - 2017-04-28 - Fix calibration/diagnostic days result in perfdata when 
+#                    they have not been run
 # !!!!!!!!!!!!!!!!!!!!!!!!!!! REQUIRES BASH 4 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 # THE PROGRAM IS DISTRIBUTED IN THE HOPE THAT IT WILL BE USEFUL, BUT WITHOUT 
 # ANY WARRANTY. IT IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EITHER
@@ -36,7 +38,7 @@
 # PROGRAMS), EVEN IF THE AUTHOR HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH 
 # DAMAGES.
 
-version="2017-04-18"
+version="2017-04-28"
 
 if [[ "${BASH_VERSINFO[0]}" -lt 4 ]];then
     echo "Requires bash version >= 4"
@@ -330,6 +332,7 @@ if [[ $diagtest != "no" ]];then
             fi
         fi
     else
+        diagdays=$diagcrit
         exitstatus=2
         [[ -z $exitstring ]] && exitstring="CRIT: invalid diagnostic date" || exitstring="$exitstring, CRIT: invalid diagnostic date"
     fi
@@ -360,6 +363,7 @@ if [[ $calibtest != "no" ]];then
             fi
         fi
     else
+        calibdays=$calibcrit
         exitstatus=2
         [[ -z $exitstring ]] && exitstring="CRIT: invalid calibration date" || exitstring="$exitstring, CRIT: invalid calibration date"
     fi
@@ -444,8 +448,8 @@ if [[ $temp -gt $tempwarn ]];then
 fi
 
 perfdata=";| Temp=$temp;$tempwarn;$tempcrit;0 Line_Voltage=$involtsdata;$inhigh;;$inlow Load=$load;$loadwarn;$loadcrit;0 RunTime=$runtime;$runwarn;$runcrit;0"
-[[ $diagdata == "no" ]] || perfdata="$perfdata Diagnostic=$diagdays;$diagwarn;$diagcrit;0"
-[[ $calibdata == "no" ]] || perfdata="$perfdata Calibration=$calibdays;$calibwarn;$calibcrit;0"
+[[ $diagdata == "no" ]] || perfdata="$perfdata Diagnostic=${diagdays:-0};$diagwarn;$diagcrit;0"
+[[ $calibdata == "no" ]] || perfdata="$perfdata Calibration=${calibdays:-0};$calibwarn;$calibcrit;0"
 [[ -z $exitstring ]] && exitstring="OK"
 exitstring="host: $upshostname: $upsvendorPrettyName ${upsmodel:-(Unknown Model)}: $exitstring$perfdata"
 case $exitstatus in
