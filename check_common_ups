@@ -39,7 +39,7 @@
 # PROGRAMS), EVEN IF THE AUTHOR HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH 
 # DAMAGES.
 
-version="2017-04-28"
+version="2017-05-10"
 
 if [[ "${BASH_VERSINFO[0]}" -lt 4 ]];then
     echo "Requires bash version >= 4"

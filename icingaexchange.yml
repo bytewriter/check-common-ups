@@ -8,13 +8,13 @@ type: Plugin
 license: gplv3
 releases: 
   - 
-    name: 2017-04-28
-    description: "Release 2017-04-18"
+    name: 2017-05-10
+    description: "Release 2017-05-10"
     files: 
       - 
         name: check_common_ups
         url: "file:///check_common_ups"
-        description: "Release 2017-04-18"
+        description: "Release 2017-05-10"
         checksum: 7f38acbde142a6007c0cc007110b717f
       -
         name: common_ups.conf
