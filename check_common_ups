@@ -23,6 +23,7 @@
 #                    APC Web/SNMP Management Card (MB:v4.0.1 PF:v6.1.1 PN:apc_hw05_aos_611.bin AF1:v6.1.1 AN1:apc_hw05_sumx_611.bin MN:AP9630 HR:05 SN: ZA1425004783 MD:06/18/2014) (Embedded PowerNet SNMP Agent SW v2.2 compatible)
 # Mel - 2017-04-28 - Fix calibration/diagnostic days result in perfdata when 
 #                    they have not been run
+# Mel - 2017-05-10 - Typo: unsuppoted
 # !!!!!!!!!!!!!!!!!!!!!!!!!!! REQUIRES BASH 4 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 # THE PROGRAM IS DISTRIBUTED IN THE HOPE THAT IT WILL BE USEFUL, BUT WITHOUT 
 # ANY WARRANTY. IT IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EITHER
@@ -237,7 +238,7 @@ upsvendorID="${upsvendorID%%.*}"
 case ${upsvendorID} in
     318)     upstype="apc";upsvendorPrettyName="APC";;
     3808)    upstype="cyber";upsvendorPrettyName="CyberPower";;
-    *)       upstype="unsupported";upsvendorPrettyName="Unsuppoted";;
+    *)       upstype="unsupported";upsvendorPrettyName="Unsupported";;
 esac
 
 case ${upstype} in
